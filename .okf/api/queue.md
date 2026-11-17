@@ -5,7 +5,7 @@ description: Constants, PixelQueue: every method, the commands, the arithmetic o
 resource: stubs/
 tags: [queue, display-list, damage, transform, c]
 status: draft
-generated: { by: claude-fable/5.2, at: 2026-11-13T12:00:00Z }
+generated: { by: claude-opus/5.5, at: 2026-11-17T01:40:00Z }
 sources:
   - id: stubs
     resource: stubs/
@@ -62,6 +62,7 @@ Every shape first checks that a frame is open, then that each argument is finite
 | `strokeEllipse(..., stroke)` | Axes kept: `['ring', cx', cy', rx', ry', stroke', rgba, clip]`. Otherwise a closed `polyline` of the flattened ellipse. |
 | `roundRect(x, y, w, h, radii, fill, border, borderWidth)` | Below. |
 | `shadow(x, y, w, h, radius, blur, rgba, dx, dy)` | `['shadow', x0, y0, x1, y1, radius·a, blur·a, rgba, clip]`, corners `(x + dx, y + dy)` and `(x + w + dx, y + h + dy)` transformed; radius held to `0..min(w, h) / 2`, blur to 0 or more. Needs an even transform. |
+| `glyphs(runs, x, y, ink, rgba)` | `['glyphs', runs, [a, b, c, d, e′, f′], rgba, [x0, y0, x1, y1], clip]`: `runs` carried as given; `e′, f′` is `(x, y)` through the transform; `[x0 .. y1]` the box of `ink`'s four corners, each moved by `(x, y)` and transformed, one pixel out. `x`, `y` checked and transformed first; nothing recorded for a null `ink` or an empty clip. Refusals name the call `text`; a malformed `ink` is a `ValueError`. |
 
 **Stroke.** `stroke' = stroke · sqrt(|a·d − b·c|)`; past the limit it throws with `$what` `stroke`. A stroke' of 0 or less records nothing.
 
@@ -92,7 +93,7 @@ For contours, points and spans the entry is read when a box is asked for, not wh
 
 # Boxes
 
-A command's **reach** is `x0, y0, x1, y1` in pixels: a path's points one pixel out; a polyline's `2·stroke + 1` out; an ellipse's `c ± r ± 1`; a ring's `c ± r ± stroke / 2 ± 1`; a rounded box's corners one out; a shadow's corners `blur + 1` out. Its **box** on a surface `sw` by `sh` is `floor(x0)` held to 0 at least, `floor(y0)` likewise, `ceil(x1)` held to `sw` at most, `ceil(y1)` to `sh`, then cut to its clip rect; no box when that is no pixel.[^boxes]
+A command's **reach** is `x0, y0, x1, y1` in pixels: a path's points one pixel out; a polyline's `2·stroke + 1` out; an ellipse's `c ± r ± 1`; a ring's `c ± r ± stroke / 2 ± 1`; a rounded box's corners one out; a shadow's corners `blur + 1` out; text's ink box, transformed, one out. Its **box** on a surface `sw` by `sh` is `floor(x0)` held to 0 at least, `floor(y0)` likewise, `ceil(x1)` held to `sw` at most, `ceil(y1)` to `sh`, then cut to its clip rect; no box when that is no pixel.[^boxes]
 
 A **grain** is `unitWidth, unitHeight, limitWidth, limitHeight`. Snapping a rect grows its left and top down to a multiple of the unit, its right and bottom up to one, and holds the right and bottom to the limits.
 

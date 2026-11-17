@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: fc6bc8c00ff869b74f8f790828d6deadacb3af63 */
+ * Stub hash: 5af8b2a7f2936c465eb819ca2be886406b303462 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_PixelQueue___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, nonZero, IS_MIXED, 0, "0")
@@ -143,6 +143,14 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_shadow, 0, 9, I
 	ZEND_ARG_TYPE_INFO(0, dy, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_glyphs, 0, 5, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, runs, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO(0, x, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO(0, y, IS_DOUBLE, 0)
+	ZEND_ARG_TYPE_INFO(0, ink, IS_ARRAY, 1)
+	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_drawn, 0, 6, IS_ARRAY, 0)
 	ZEND_ARG_TYPE_INFO(0, surfaceWidth, IS_LONG, 0)
 	ZEND_ARG_TYPE_INFO(0, surfaceHeight, IS_LONG, 0)
@@ -179,6 +187,7 @@ ZEND_METHOD(PixelQueue, fillEllipse);
 ZEND_METHOD(PixelQueue, strokeEllipse);
 ZEND_METHOD(PixelQueue, roundRect);
 ZEND_METHOD(PixelQueue, shadow);
+ZEND_METHOD(PixelQueue, glyphs);
 ZEND_METHOD(PixelQueue, drawn);
 ZEND_METHOD(PixelQueue, changed);
 
@@ -207,6 +216,7 @@ static const zend_function_entry class_PixelQueue_methods[] = {
 	ZEND_ME(PixelQueue, strokeEllipse, arginfo_class_PixelQueue_strokeEllipse, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, roundRect, arginfo_class_PixelQueue_roundRect, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, shadow, arginfo_class_PixelQueue_shadow, ZEND_ACC_PUBLIC)
+	ZEND_ME(PixelQueue, glyphs, arginfo_class_PixelQueue_glyphs, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, drawn, arginfo_class_PixelQueue_drawn, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, changed, arginfo_class_PixelQueue_changed, ZEND_ACC_PUBLIC)
 	ZEND_FE_END

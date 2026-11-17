@@ -17,6 +17,7 @@
  *     ['roundrect', x0, y0, x1, y1, [tl, tr, br, bl], rgba, clip]
  *     ['roundring', x0, y0, x1, y1, [tl, tr, br, bl], inset, rgba, clip]
  *     ['shadow', x0, y0, x1, y1, radius, blur, rgba, clip]
+ *     ['glyphs', runs, [a, b, c, d, e, f], rgba, [x0, y0, x1, y1], clip]
  *
  * Numbers are in pixels of the surface, already through the transform. A colour is whatever
  * integer the caller gives. The clip and the fill rule are values the caller gives and the queue
@@ -165,6 +166,21 @@ final class PixelQueue
      * @throws PixelQueueException
      */
     public function shadow(float $x, float $y, float $width, float $height, float $radius, float $blur, int $rgba, float $dx, float $dy): void {}
+
+    /**
+     * Text with its top-left at (x, y): ['glyphs', runs, [a, b, c, d, e, f], rgba, [x0, y0, x1, y1], clip].
+     * [a .. f] is the transform with (x, y) through it as its e and f. [x0 .. y1] is the box of $ink's
+     * four corners, each moved by (x, y) and put through the transform, grown by 1 on every side: it
+     * is the command's reach. Nothing is recorded when $ink is null or the clip is empty; x and y are
+     * checked, and put through the transform, first. Its refusals name the call 'text'.
+     *
+     * @param array $runs Carried into the command as it is.
+     * @param array|null $ink [x0, y0, x1, y1]: where the text has ink, from its top-left; null for none.
+     *
+     * @throws PixelQueueException When x or y is not finite, or a point lands past the limit.
+     * @throws ValueError When $ink is not null or four finite numbers.
+     */
+    public function glyphs(array $runs, float $x, float $y, ?array $ink, int $rgba): void {}
 
     /**
      * Where the last frame writes: the box of every command, then each rect of $also, merged

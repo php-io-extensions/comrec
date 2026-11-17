@@ -16,7 +16,7 @@ static zend_object_handlers phppq_queue_handlers;
 
 /* The kinds the queue records itself. Made once as the module starts, and never changed. */
 static zend_string *phppq_kind_clear, *phppq_kind_path, *phppq_kind_polyline, *phppq_kind_ellipse,
-	*phppq_kind_ring, *phppq_kind_roundrect, *phppq_kind_roundring, *phppq_kind_shadow;
+	*phppq_kind_ring, *phppq_kind_roundrect, *phppq_kind_roundring, *phppq_kind_shadow, *phppq_kind_glyphs;
 
 /* The most points one flattened outline has: four corners of 257 points. */
 #define PQ_OUTLINE_POINTS 1028
@@ -183,6 +183,7 @@ void phppq_register_PixelQueue(void)
 	phppq_kind_roundrect = zend_string_init_interned("roundrect", sizeof("roundrect") - 1, true);
 	phppq_kind_roundring = zend_string_init_interned("roundring", sizeof("roundring") - 1, true);
 	phppq_kind_shadow = zend_string_init_interned("shadow", sizeof("shadow") - 1, true);
+	phppq_kind_glyphs = zend_string_init_interned("glyphs", sizeof("glyphs") - 1, true);
 }
 
 #define PHPPQ_THIS() phppq_queue_from(Z_OBJ_P(ZEND_THIS))
@@ -1476,6 +1477,65 @@ PHP_METHOD(PixelQueue, shadow)
 	phppq_add_copy(list, &q->clip_value);
 	ZVAL_ARR(&command, list);
 	phppq_meta_reach(q, phppq_frame_add(&q->open, &command), a[0] - blur - 1.0, a[1] - blur - 1.0, b[0] + blur + 1.0, b[1] + blur + 1.0);
+}
+
+PHP_METHOD(PixelQueue, glyphs)
+{
+	HashTable *ink_list = NULL;
+	double x, y, ink[4], origin[2], corners[8], reach[4];
+	zend_long rgba;
+	phppq_queue *q;
+	zval *runs, command, entry;
+	zend_array *list, *matrix, *box;
+
+	ZEND_PARSE_PARAMETERS_START(5, 5)
+		Z_PARAM_ARRAY(runs)
+		Z_PARAM_DOUBLE(x)
+		Z_PARAM_DOUBLE(y)
+		Z_PARAM_ARRAY_HT_OR_NULL(ink_list)
+		Z_PARAM_LONG(rgba)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (ink_list != NULL && !phppq_numbers(ink_list, 4, ink, 4, "null or [x0, y0, x1, y1], four finite numbers")) {
+		RETURN_THROWS();
+	}
+	q = PHPPQ_THIS();
+	if (!phppq_open(q, "text") || !phppq_finite(x, "x") || !phppq_finite(y, "y") || !phppq_point(q, x, y, "x", "y", origin)) {
+		RETURN_THROWS();
+	}
+	if (ink_list == NULL || phppq_clip_empty(q)) {
+		return;
+	}
+	/* the ink's box through the transform, grown by a pixel: anti-aliased edges, and each glyph moved to a whole pixel */
+	if (!phppq_point(q, x + ink[0], y + ink[1], "x", "y", corners) || !phppq_point(q, x + ink[2], y + ink[1], "x", "y", corners + 2)
+		|| !phppq_point(q, x + ink[2], y + ink[3], "x", "y", corners + 4) || !phppq_point(q, x + ink[0], y + ink[3], "x", "y", corners + 6)) {
+		RETURN_THROWS();
+	}
+	phppq_reach(corners, 4, reach, false);
+
+	list = zend_new_array(6);
+	phppq_add_kind(list, phppq_kind_glyphs);
+	phppq_add_copy(list, runs);
+	matrix = zend_new_array(6);
+	phppq_add_double(matrix, q->m[0]);
+	phppq_add_double(matrix, q->m[1]);
+	phppq_add_double(matrix, q->m[2]);
+	phppq_add_double(matrix, q->m[3]);
+	phppq_add_double(matrix, origin[0]);
+	phppq_add_double(matrix, origin[1]);
+	ZVAL_ARR(&entry, matrix);
+	zend_hash_next_index_insert_new(list, &entry);
+	phppq_add_long(list, rgba);
+	box = zend_new_array(4);
+	phppq_add_double(box, reach[0] - 1.0);
+	phppq_add_double(box, reach[1] - 1.0);
+	phppq_add_double(box, reach[2] + 1.0);
+	phppq_add_double(box, reach[3] + 1.0);
+	ZVAL_ARR(&entry, box);
+	zend_hash_next_index_insert_new(list, &entry);
+	phppq_add_copy(list, &q->clip_value);
+	ZVAL_ARR(&command, list);
+	phppq_meta_reach(q, phppq_frame_add(&q->open, &command), reach[0] - 1.0, reach[1] - 1.0, reach[2] + 1.0, reach[3] + 1.0);
 }
 
 /* ------------------------------------------------------------------- boxes */
