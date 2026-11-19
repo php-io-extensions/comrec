@@ -1,17 +1,17 @@
 #!/bin/bash
 
-# Installer for the pixel_queue extension on Debian Trixie
+# Installer for the comrec extension on Debian Trixie
 # and compatible systems: Ubuntu 24.04+, Raspberry Pi OS Bookworm/Trixie.
 #
 # - Resolves PHP binary, php-config and extension dir automatically
 # - Syncs stubs/*_arginfo.h with stubs/*.stub.php, then compiles with phpize
-# - Installs pixel_queue.so, enables it for CLI, FPM, and Apache SAPIs
+# - Installs comrec.so, enables it for CLI, FPM, and Apache SAPIs
 # - Leaves the checkout clean: build artifacts are removed after install
 
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-EXTENSION_NAME="pixel_queue"
+EXTENSION_NAME="comrec"
 BUILD_SO="${SCRIPT_DIR}/modules/${EXTENSION_NAME}.so"
 LOG_FILE="${SCRIPT_DIR}/build.log"
 
@@ -72,7 +72,7 @@ clean_build_tree() {
 }
 
 echo "=========================================="
-echo " pixel_queue Extension Installer (Debian Trixie / Raspberry Pi OS)"
+echo " comrec Extension Installer (Debian Trixie / Raspberry Pi OS)"
 echo "=========================================="
 echo ""
 
@@ -156,7 +156,7 @@ if ! "$PHP_BIN_REAL" build/gen_stub.php stubs >>"$LOG_FILE" 2>&1; then
     show_failure_logs
     die "gen_stub.php failed. See ${LOG_FILE}."
 fi
-if ! ./configure --enable-pixel-queue "--with-php-config=${RESOLVED_PHP_CONFIG}" >>"$LOG_FILE" 2>&1; then
+if ! ./configure --enable-comrec "--with-php-config=${RESOLVED_PHP_CONFIG}" >>"$LOG_FILE" 2>&1; then
     show_failure_logs
     die "configure failed. See ${LOG_FILE}."
 fi
@@ -188,7 +188,7 @@ step "⚙️  Enabling extension..."
 declare -a CONF_DIR_CANDIDATES=()
 
 # Only the conf.d dirs of the PHP we built against: another PHP on the box
-# (distro vs /usr/local build) would fail to load this pixel_queue.so.
+# (distro vs /usr/local build) would fail to load this comrec.so.
 if [ -n "${CLI_SCAN_DIR:-}" ] && [ "$CLI_SCAN_DIR" != "(none)" ] && [ -d "$CLI_SCAN_DIR" ]; then
     CONF_DIR_CANDIDATES+=("$CLI_SCAN_DIR")
     # Debian/Ubuntu packaging: FPM and Apache SAPIs of the same PHP sit beside cli/.

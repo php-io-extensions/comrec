@@ -10,7 +10,7 @@
 #endif
 
 #include "php.h"
-#include "php_pixel_queue.h"
+#include "php_comrec.h"
 #include "boxes.h"
 
 /* A turned ellipse or rounded corner becomes a polygon that strays from it by less than this. */

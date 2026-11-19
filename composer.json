@@ -1,5 +1,5 @@
 {
-    "name": "php-io-extensions/pixel-queue",
+    "name": "php-io-extensions/comrec",
     "type": "php-ext",
     "description": "A frame of drawing commands in C: PixelQueue records shapes under a transform and a clip, keeps the last frame, and answers which pixels changed between the two",
     "keywords": [
@@ -33,7 +33,7 @@
         }
     },
     "php-ext": {
-        "extension-name": "pixel_queue",
+        "extension-name": "comrec",
         "priority": 30,
         "support-zts": true,
         "support-nts": true,
@@ -43,8 +43,8 @@
         ],
         "configure-options": [
             {
-                "name": "enable-pixel-queue",
-                "description": "Enable the pixel_queue extension",
+                "name": "enable-comrec",
+                "description": "Enable the comrec extension",
                 "needs-value": false
             }
         ]

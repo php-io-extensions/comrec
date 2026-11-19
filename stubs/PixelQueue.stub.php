@@ -107,6 +107,31 @@ final class PixelQueue
     public function append(array $command, int $how, float $grow = 0.0, ?array $pieces = null, bool $restless = false, ?array $reads = null): void {}
 
     /**
+     * A recorded command in a simpler form, for a drawer that cannot draw it as it is. Reads nothing but the command
+     * and the two rule values the queue was made with; records nothing.
+     *
+     * 'polygon':    ['path', contours, rule, paint, clip]: curves as straight sides; a stroke as the area it covers,
+     *               butt ends, miters up to 4 and bevels past it. A path comes back as it is.
+     * 'trapezoids': ['trapezoids', [[top, bottom, left at top, left at bottom, right at top, right at bottom], ...], paint, clip]:
+     *               the area under the rule; a trapezoid stays open while the same two edges bound it, and ends where
+     *               one of them ends or crosses another.
+     * 'triangles':  ['triangles', [[x0, y0, x1, y1, x2, y2], ...], paint, clip]: each trapezoid as up to two.
+     * A 'trapezoids' command, as this gives it, lowers to 'triangles' without being cut again.
+     * null for a command with no outline ('clear', 'shadow', 'glyphs'), or one this cannot read.
+     *
+     * $packing gives a 'trapezoids' or 'triangles' command's items as packed strings in place of lists, laid out as a
+     * library's own struct array: a list of [encoding, fields] pairs, each one string. encoding is 'f32' (little-endian
+     * float32) or 'fixed16' (little-endian int32, each number times 65536 rounded half away from zero); fields are the
+     * places in an item (0 to 5) each struct field holds, in order, repeats allowed. The command's items are then the
+     * list of those strings. A 'polygon' is always lists, and a packed command lowers no further.
+     *
+     * @param array|null $packing A list of [encoding, fields] pairs.
+     *
+     * @throws ValueError When $form is none of the three, or $packing is not as described.
+     */
+    public function lower(array $command, string $form, ?array $packing = null): ?array {}
+
+    /**
      * Start a layer: commands are recorded in a list of their own, under this clip, with nothing
      * pushed. The transform stays.
      */
@@ -123,31 +148,56 @@ final class PixelQueue
     /** @throws PixelQueueException */
     public function clear(int $rgba): void {}
 
-    /** @throws PixelQueueException */
-    public function fillRect(float $x, float $y, float $width, float $height, int $rgba): void {}
+    /**
+     * A shape's paint is an int colour, 0xRRGGBBAA, or a gradient, a list of four: [kind, geometry, stops, spread].
+     * A gradient is recorded as given with the transform appended, [a, b, c, d, e, f]: five entries. The queue reads
+     * nothing inside it. A paint of another form is a ValueError.
+     *
+     * @throws PixelQueueException
+     */
+    public function fillRect(float $x, float $y, float $width, float $height, int|array $rgba): void {}
 
     /** @throws PixelQueueException */
-    public function strokeRect(float $x, float $y, float $width, float $height, int $rgba, float $stroke): void {}
+    public function strokeRect(float $x, float $y, float $width, float $height, int|array $rgba, float $stroke): void {}
 
     /** @throws PixelQueueException */
-    public function line(float $x0, float $y0, float $x1, float $y1, int $rgba, float $stroke): void {}
+    public function line(float $x0, float $y0, float $x1, float $y1, int|array $rgba, float $stroke): void {}
 
     /** @throws PixelQueueException */
-    public function fillTriangle(float $x0, float $y0, float $x1, float $y1, float $x2, float $y2, int $rgba): void {}
+    public function fillTriangle(float $x0, float $y0, float $x1, float $y1, float $x2, float $y2, int|array $rgba): void {}
+
+    /**
+     * A 'path' of every subpath of the ops ['M', x, y], ['L', x, y], ['Q', cx, cy, x, y], ['C', c1x, c1y, c2x, c2y,
+     * x, y] and ['Z'], through the transform, curves flattened to within a quarter pixel; the rule value given to the
+     * constructor for $evenOdd, as it is. Nothing for no points or an empty clip.
+     *
+     * @param array $ops A list of path ops, starting with an 'M'.
+     * @throws PixelQueueException
+     */
+    public function fillPath(array $ops, bool $evenOdd, int|array $rgba): void {}
+
+    /**
+     * A 'polyline' for every subpath of two points or more, through the transform, curves flattened as fillPath()'s,
+     * closed where a 'Z' closes it, with the stroke scaled as line()'s.
+     *
+     * @param array $ops A list of path ops, starting with an 'M'.
+     * @throws PixelQueueException
+     */
+    public function strokePath(array $ops, int|array $rgba, float $stroke): void {}
 
     /**
      * An 'ellipse' under a transform that keeps its axes; a 'path' of straight sides otherwise.
      *
      * @throws PixelQueueException
      */
-    public function fillEllipse(float $cx, float $cy, float $rx, float $ry, int $rgba): void {}
+    public function fillEllipse(float $cx, float $cy, float $rx, float $ry, int|array $rgba): void {}
 
     /**
      * A 'ring' under a transform that keeps its axes; a closed 'polyline' otherwise.
      *
      * @throws PixelQueueException
      */
-    public function strokeEllipse(float $cx, float $cy, float $rx, float $ry, int $rgba, float $stroke): void {}
+    public function strokeEllipse(float $cx, float $cy, float $rx, float $ry, int|array $rgba, float $stroke): void {}
 
     /**
      * A rounded box, with a border inside its edge when $border is not null. Each radius is held
@@ -158,7 +208,7 @@ final class PixelQueue
      *
      * @throws PixelQueueException
      */
-    public function roundRect(float $x, float $y, float $width, float $height, array $radii, int $fill, ?int $border, float $borderWidth): void {}
+    public function roundRect(float $x, float $y, float $width, float $height, array $radii, int|array $fill, int|array|null $border, float $borderWidth): void {}
 
     /**
      * A blurred box, moved by ($dx, $dy). Needs an upright transform that scales x and y alike.

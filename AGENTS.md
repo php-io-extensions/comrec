@@ -1,9 +1,9 @@
-# Agent guidance — php-io-extensions/pixel-queue
+# Agent guidance — php-io-extensions/comrec
 
 1. **Read [`.okf/index.md`](.okf/index.md) first** before changing the API, the C, or packaging. Open only the concepts the change touches.
 2. **Commands in, rects out, nothing drawn.** `PixelQueue` records shapes as PHP lists under a transform and a clip, keeps two frames, and answers where they write and where they differ. No pixels, no windows, no fonts, no images, no dependency, no framework names. See [`.okf/api/queue.md`](.okf/api/queue.md).
 3. **The clip and the fill rule are the caller's.** The queue stores them and puts them in commands untouched. It never reads a property of one, calls a method on one, or makes one.
-4. **Plain C on the Zend API.** No Zephir, no FFI, no system library. `src/boxes.{h,c}` is plain C with no Zend in it (rects, a piece's box, the merge); `src/PixelQueue.c` is the class; `src/pixel_queue.c` is the module and the exception.
+4. **Plain C on the Zend API.** No Zephir, no FFI, no system library. `src/boxes.{h,c}` is plain C with no Zend in it (rects, a piece's box, the merge); `src/PixelQueue.c` is the class; `src/comrec.c` is the module and the exception.
 5. **The arithmetic is a contract.** A point is `a·x + c·y + e`, `b·x + d·y + f` in IEEE double; a turned curve's sides and angles are worked in the order [`.okf/api/queue.md`](.okf/api/queue.md) writes down; boxes and merges are whole-number steps in a fixed order. The same calls answer the same numbers, bit for bit, on every platform and from a PHP implementation of the same steps. A change to it changes every caller's commands: it needs its reason, and its tests work the expected numbers by hand.
 6. **Three flags stay in `config.m4`.** `-ffp-contract=off`: without it the compiler fuses multiply-adds and the numbers move. `-fno-builtin-sin -fno-builtin-cos`: without them it joins the sine and cosine of one angle into a single `sincos` call whose last bit differs. Check with `objdump -d src/.libs/PixelQueue.o | grep -c fmadd`: 0, and `nm -u src/.libs/PixelQueue.o | grep -i sincos`: nothing.
 7. **Every method is written out.** One `PHP_METHOD` a method, matching its stub. No macro that stamps out methods.
@@ -12,4 +12,4 @@
 10. **NTS and ZTS.** No module globals: the kind strings are interned once in `MINIT` and never written again. Every change builds with `-Wall -Wextra` without a warning from `src/` and passes Pest under NTS and ZTS on macOS and Linux.
 11. **Tests are Pest v4 and hardware-free.** Expected commands and rects are worked by hand.
 12. **Durable facts go in `.okf`.** Update the matching concept, bump its `generated.at`, append `.okf/log.md`. The bundle documents the package, never a session.
-13. **Version**: `PHP_PIXEL_QUEUE_VERSION` moves only past a published tag; tags drive Packagist.
+13. **Version**: `PHP_COMREC_VERSION` moves only past a published tag; tags drive Packagist.

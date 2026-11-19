@@ -4,7 +4,7 @@
          bootstrap="vendor/autoload.php"
          colors="true">
     <testsuites>
-        <testsuite name="pixel-queue">
+        <testsuite name="comrec">
             <directory suffix="Test.php">./tests</directory>
         </testsuite>
     </testsuites>

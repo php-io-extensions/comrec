@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-if (! extension_loaded('pixel_queue')) {
-    throw new RuntimeException('The pixel_queue extension is not loaded; run pest with -d extension=/path/to/pixel_queue.so');
+if (! extension_loaded('comrec')) {
+    throw new RuntimeException('The comrec extension is not loaded; run pest with -d extension=/path/to/comrec.so');
 }
 
 const RED = 0xFF0000FF;

@@ -1,19 +1,19 @@
 #!/bin/bash
 
-# Builds ext-pixel-queue in a disposable copy and installs it into each PHP given.
+# Builds ext-comrec in a disposable copy and installs it into each PHP given.
 #
 #   ./install-macos.sh                      # Homebrew php@8.4 (NTS) and php@8.4-zts
 #   ./install-macos.sh /path/to/bin/php ... # specific PHP binaries
 #
 # For each PHP: phpize/configure/make against that PHP's php-config, copy the
 # .so into its extension_dir, re-sign it ad hoc so amfid accepts it on first
-# load, and enable it with 30-pixel_queue.ini in its conf.d scan dir.
+# load, and enable it with 30-comrec.ini in its conf.d scan dir.
 
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCES=(config.m4 php_pixel_queue.h src stubs)
-INI_NAME="30-pixel_queue.ini"
+SOURCES=(config.m4 php_comrec.h src stubs)
+INI_NAME="30-comrec.ini"
 
 die() { printf '✖ %s\n' "$*" >&2; exit 1; }
 warn() { printf '⚠ %s\n' "$*" >&2; }
@@ -40,13 +40,13 @@ for PHP_BIN in "${PHP_BINS[@]}"; do
     done
 
     step "Building for $("$PHP_BIN" -r 'echo PHP_VERSION, PHP_ZTS ? " ZTS" : " NTS";') (${PHP_BIN})"
-    BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/pixel-queue-build.XXXXXX")"
+    BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/comrec-build.XXXXXX")"
     for f in "${SOURCES[@]}"; do
         cp -R "${SCRIPT_DIR}/${f}" "${BUILD_DIR}/"
     done
     if ! (cd "$BUILD_DIR" \
         && "$PHPIZE" \
-        && ./configure --enable-pixel-queue --with-php-config="$PHP_CONFIG" \
+        && ./configure --enable-comrec --with-php-config="$PHP_CONFIG" \
         && make -j"$(sysctl -n hw.ncpu)") >"${BUILD_DIR}/build.log" 2>&1; then
         tail -40 "${BUILD_DIR}/build.log" >&2
         die "Build failed for ${PHP_BIN}"
@@ -57,12 +57,12 @@ for PHP_BIN in "${PHP_BINS[@]}"; do
     [[ -d "$EXT_DIR" ]] || die "extension_dir ${EXT_DIR} does not exist"
     [[ -n "$SCAN_DIR" && -d "$SCAN_DIR" ]] || die "conf.d scan dir '${SCAN_DIR}' does not exist"
 
-    install -m 0755 "${BUILD_DIR}/modules/pixel_queue.so" "${EXT_DIR}/pixel_queue.so"
-    codesign --force --sign - "${EXT_DIR}/pixel_queue.so" >/dev/null 2>&1
-    printf 'extension=pixel_queue\n' > "${SCAN_DIR}/${INI_NAME}"
+    install -m 0755 "${BUILD_DIR}/modules/comrec.so" "${EXT_DIR}/comrec.so"
+    codesign --force --sign - "${EXT_DIR}/comrec.so" >/dev/null 2>&1
+    printf 'extension=comrec\n' > "${SCAN_DIR}/${INI_NAME}"
 
-    "$PHP_BIN" -r 'exit(extension_loaded("pixel_queue") ? 0 : 1);' || die "pixel_queue did not load in ${PHP_BIN}"
-    step "Installed ${EXT_DIR}/pixel_queue.so, enabled by ${SCAN_DIR}/${INI_NAME}"
+    "$PHP_BIN" -r 'exit(extension_loaded("comrec") ? 0 : 1);' || die "comrec did not load in ${PHP_BIN}"
+    step "Installed ${EXT_DIR}/comrec.so, enabled by ${SCAN_DIR}/${INI_NAME}"
 
     rm -rf "$BUILD_DIR"
     BUILD_DIR=""

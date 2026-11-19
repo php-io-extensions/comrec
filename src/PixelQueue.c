@@ -7,6 +7,7 @@
 #include "zend_exceptions.h"
 #include "zend_interfaces.h"
 #include "../stubs/PixelQueue_arginfo.h"
+#include "lower.h"
 
 #include <math.h>
 
@@ -464,8 +465,42 @@ static zend_always_inline void phppq_meta_reach(phppq_queue *q, pq_meta *m, doub
 	m->piece.clip = q->clip;
 }
 
-/* ['path', contours, rule, rgba, clip] of one or two contours; nothing under an empty clip. */
-static void phppq_record_path(phppq_queue *q, const double *first, uint32_t first_n, const double *second, uint32_t second_n, zval *rule, zend_long rgba)
+/* A paint: an int colour 0xRRGGBBAA, or a gradient [kind, geometry, stops, spread]; false with a ValueError. The queue
+ * reads nothing inside a gradient. */
+static bool phppq_paint_ok(zval *paint, uint32_t arg)
+{
+	if (Z_TYPE_P(paint) == IS_LONG
+		|| (Z_TYPE_P(paint) == IS_ARRAY && zend_array_is_list(Z_ARRVAL_P(paint)) && zend_hash_num_elements(Z_ARRVAL_P(paint)) == 4)) {
+		return true;
+	}
+	zend_argument_value_error(arg, "must be an int colour or a gradient [kind, geometry, stops, spread]");
+	return false;
+}
+
+/* A paint into a command: an int as it is; a gradient as given with the transform it is drawn through, [a, b, c, d,
+ * e, f], appended. */
+static void phppq_add_paint(zend_array *list, const phppq_queue *q, zval *paint)
+{
+	zend_array *gradient, *matrix;
+	zval z;
+
+	if (Z_TYPE_P(paint) == IS_LONG) {
+		phppq_add_long(list, Z_LVAL_P(paint));
+		return;
+	}
+	gradient = zend_array_dup(Z_ARRVAL_P(paint));
+	matrix = zend_new_array(6);
+	for (int i = 0; i < 6; i++) {
+		phppq_add_double(matrix, q->m[i]);
+	}
+	ZVAL_ARR(&z, matrix);
+	zend_hash_next_index_insert_new(gradient, &z);
+	ZVAL_ARR(&z, gradient);
+	zend_hash_next_index_insert_new(list, &z);
+}
+
+/* ['path', contours, rule, paint, clip] of one or two contours; nothing under an empty clip. */
+static void phppq_record_path(phppq_queue *q, const double *first, uint32_t first_n, const double *second, uint32_t second_n, zval *rule, zval *rgba)
 {
 	zval command, contours, contour;
 	zend_array *list;
@@ -488,14 +523,14 @@ static void phppq_record_path(phppq_queue *q, const double *first, uint32_t firs
 	phppq_add_kind(list, phppq_kind_path);
 	zend_hash_next_index_insert_new(list, &contours);
 	phppq_add_copy(list, rule);
-	phppq_add_long(list, rgba);
+	phppq_add_paint(list, q, rgba);
 	phppq_add_copy(list, &q->clip_value);
 	ZVAL_ARR(&command, list);
 	phppq_meta_reach(q, phppq_frame_add(&q->open, &command), reach[0] - 1.0, reach[1] - 1.0, reach[2] + 1.0, reach[3] + 1.0);
 }
 
 /* ['polyline', points, stroke, closed, rgba, clip] with the stroke scaled; false with a refusal thrown. */
-static bool phppq_record_stroked(phppq_queue *q, const double *points, uint32_t n, double stroke, bool closed, zend_long rgba)
+static bool phppq_record_stroked(phppq_queue *q, const double *points, uint32_t n, double stroke, bool closed, zval *rgba)
 {
 	zval command, list_of_points, flag;
 	zend_array *list;
@@ -516,7 +551,7 @@ static bool phppq_record_stroked(phppq_queue *q, const double *points, uint32_t 
 	phppq_add_double(list, stroke);
 	ZVAL_BOOL(&flag, closed);
 	zend_hash_next_index_insert_new(list, &flag);
-	phppq_add_long(list, rgba);
+	phppq_add_paint(list, q, rgba);
 	phppq_add_copy(list, &q->clip_value);
 	ZVAL_ARR(&command, list);
 	grow = 2.0 * stroke + 1.0;
@@ -525,7 +560,7 @@ static bool phppq_record_stroked(phppq_queue *q, const double *points, uint32_t 
 }
 
 /* [kind, x0, y0, x1, y1, [tl, tr, br, bl], (inset,) rgba, clip]: a 'roundrect', or a 'roundring' when inset is given. */
-static void phppq_record_round(phppq_queue *q, zend_string *kind, double x0, double y0, double x1, double y1, const double radii[4], double scale, const double *inset, zend_long rgba)
+static void phppq_record_round(phppq_queue *q, zend_string *kind, double x0, double y0, double x1, double y1, const double radii[4], double scale, const double *inset, zval *rgba)
 {
 	zval command, corners;
 	zend_array *list = zend_new_array(8), *four = zend_new_array(4);
@@ -544,7 +579,7 @@ static void phppq_record_round(phppq_queue *q, zend_string *kind, double x0, dou
 	if (inset != NULL) {
 		phppq_add_double(list, *inset);
 	}
-	phppq_add_long(list, rgba);
+	phppq_add_paint(list, q, rgba);
 	phppq_add_copy(list, &q->clip_value);
 	ZVAL_ARR(&command, list);
 	phppq_meta_reach(q, phppq_frame_add(&q->open, &command), x0 - 1.0, y0 - 1.0, x1 + 1.0, y1 + 1.0);
@@ -876,6 +911,430 @@ static bool phppq_whole_rect(const double *n, pq_rect *out)
 	return true;
 }
 
+/* ------------------------------------------------------------------ lower */
+
+/* The number at index i of a command, as a double; false when there is none. */
+static bool phppq_lower_number(HashTable *command, zend_ulong i, double *out)
+{
+	zval *value = zend_hash_index_find(command, i);
+
+	if (value == NULL) {
+		return false;
+	}
+	ZVAL_DEREF(value);
+	if (Z_TYPE_P(value) == IS_DOUBLE) {
+		*out = Z_DVAL_P(value);
+		return true;
+	}
+	if (Z_TYPE_P(value) == IS_LONG) {
+		*out = (double) Z_LVAL_P(value);
+		return true;
+	}
+	return false;
+}
+
+/* A list of [x, y] at index i of a command, as n points; NULL when it is not one. emalloc'd. */
+static double *phppq_lower_points(HashTable *command, zend_ulong i, uint32_t *n)
+{
+	zval *list = zend_hash_index_find(command, i), *pair;
+	double *points;
+	uint32_t k = 0;
+
+	if (list == NULL || Z_TYPE_P(list) != IS_ARRAY) {
+		return NULL;
+	}
+	points = safe_emalloc(zend_hash_num_elements(Z_ARRVAL_P(list)) + 1, 2 * sizeof(double), 0);
+	ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), pair) {
+		ZVAL_DEREF(pair);
+		if (Z_TYPE_P(pair) != IS_ARRAY || !phppq_lower_number(Z_ARRVAL_P(pair), 0, &points[2 * k])
+			|| !phppq_lower_number(Z_ARRVAL_P(pair), 1, &points[2 * k + 1])) {
+			efree(points);
+			return NULL;
+		}
+		k++;
+	} ZEND_HASH_FOREACH_END();
+	*n = k;
+	return points;
+}
+
+/* Contours read from a path command's list of lists of [x, y] into s; false when it is not one. */
+static bool phppq_lower_contours(HashTable *command, pq_shape *s)
+{
+	zval *contours = zend_hash_index_find(command, 1), *contour;
+
+	if (contours == NULL || Z_TYPE_P(contours) != IS_ARRAY) {
+		return false;
+	}
+	ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(contours), contour) {
+		zval *pair;
+
+		ZVAL_DEREF(contour);
+		if (Z_TYPE_P(contour) != IS_ARRAY) {
+			return false;
+		}
+		ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(contour), pair) {
+			double x, y;
+
+			ZVAL_DEREF(pair);
+			if (Z_TYPE_P(pair) != IS_ARRAY || !phppq_lower_number(Z_ARRVAL_P(pair), 0, &x) || !phppq_lower_number(Z_ARRVAL_P(pair), 1, &y)
+				|| !pq_shape_point(s, x, y)) {
+				return false;
+			}
+		} ZEND_HASH_FOREACH_END();
+		if (!pq_shape_end(s)) {
+			return false;
+		}
+	} ZEND_HASH_FOREACH_END();
+	return true;
+}
+
+/* One string of a packing: its encoding, and which of an item's numbers each field holds, in order. */
+enum { PHPPQ_F32, PHPPQ_FIXED16 };
+typedef struct {
+	int encoding;
+	uint32_t count;
+	uint8_t fields[64];
+} phppq_packing;
+
+#define PHPPQ_MAX_PACKINGS 8
+
+/* A number as 16.16 fixed point: times 65536, rounded half away from zero, held to int32. */
+static int32_t phppq_fixed16(double v)
+{
+	double s = v * 65536.0, t = trunc(s);
+
+	if (fabs(s - t) >= 0.5) {
+		t += s < 0 ? -1.0 : 1.0;
+	}
+	if (t > 2147483647.0) {
+		return INT32_MAX;
+	}
+	if (t < -2147483648.0) {
+		return INT32_MIN;
+	}
+	return (int32_t) t;
+}
+
+/* Every item of `size` numbers as one string: for each item, each field in turn, four bytes little-endian. */
+static zend_string *phppq_pack(const double *v, size_t n, uint32_t size, const phppq_packing *p)
+{
+	size_t items = n / size;
+	zend_string *out = zend_string_alloc(items * p->count * 4, 0);
+	unsigned char *b = (unsigned char *) ZSTR_VAL(out);
+
+	for (size_t i = 0; i < items; i++) {
+		for (uint32_t k = 0; k < p->count; k++) {
+			double x = v[i * size + p->fields[k]];
+			uint32_t u;
+			if (p->encoding == PHPPQ_F32) {
+				float f = (float) x;
+				memcpy(&u, &f, 4);
+			} else {
+				u = (uint32_t) phppq_fixed16(x);
+			}
+			*b++ = (unsigned char) (u & 0xFF);
+			*b++ = (unsigned char) ((u >> 8) & 0xFF);
+			*b++ = (unsigned char) ((u >> 16) & 0xFF);
+			*b++ = (unsigned char) (u >> 24);
+		}
+	}
+	*b = '\0';
+	return out;
+}
+
+/*
+ * lower()'s $packing: a list of [encoding, fields], encoding 'f32' or 'fixed16', fields a list of places in an item
+ * (0 to size - 1, repeats allowed). False with a ValueError on argument 3 when it is not one.
+ */
+static bool phppq_packings(HashTable *given, uint32_t size, phppq_packing *out, uint32_t *count)
+{
+	zval *entry;
+
+	*count = 0;
+	if (zend_hash_num_elements(given) == 0 || zend_hash_num_elements(given) > PHPPQ_MAX_PACKINGS || !zend_array_is_list(given)) {
+		zend_argument_value_error(3, "must be a list of 1 to %d [encoding, fields] pairs", PHPPQ_MAX_PACKINGS);
+		return false;
+	}
+	ZEND_HASH_FOREACH_VAL(given, entry) {
+		zval *encoding, *fields, *field;
+		phppq_packing *p = &out[*count];
+		ZVAL_DEREF(entry);
+		if (Z_TYPE_P(entry) != IS_ARRAY || zend_hash_num_elements(Z_ARRVAL_P(entry)) != 2
+			|| (encoding = zend_hash_index_find(Z_ARRVAL_P(entry), 0)) == NULL || (fields = zend_hash_index_find(Z_ARRVAL_P(entry), 1)) == NULL) {
+			zend_argument_value_error(3, "must hold [encoding, fields] pairs");
+			return false;
+		}
+		ZVAL_DEREF(encoding);
+		ZVAL_DEREF(fields);
+		if (Z_TYPE_P(encoding) == IS_STRING && zend_string_equals_literal(Z_STR_P(encoding), "f32")) {
+			p->encoding = PHPPQ_F32;
+		} else if (Z_TYPE_P(encoding) == IS_STRING && zend_string_equals_literal(Z_STR_P(encoding), "fixed16")) {
+			p->encoding = PHPPQ_FIXED16;
+		} else {
+			zend_argument_value_error(3, "must name each encoding 'f32' or 'fixed16'");
+			return false;
+		}
+		if (Z_TYPE_P(fields) != IS_ARRAY || zend_hash_num_elements(Z_ARRVAL_P(fields)) == 0
+			|| zend_hash_num_elements(Z_ARRVAL_P(fields)) > 64 || !zend_array_is_list(Z_ARRVAL_P(fields))) {
+			zend_argument_value_error(3, "must give each packing a list of 1 to 64 fields");
+			return false;
+		}
+		p->count = 0;
+		ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(fields), field) {
+			ZVAL_DEREF(field);
+			if (Z_TYPE_P(field) != IS_LONG || Z_LVAL_P(field) < 0 || Z_LVAL_P(field) >= (zend_long) size) {
+				zend_argument_value_error(3, "must give fields as places 0 to %u in an item", size - 1);
+				return false;
+			}
+			p->fields[p->count++] = (uint8_t) Z_LVAL_P(field);
+		} ZEND_HASH_FOREACH_END();
+		(*count)++;
+	} ZEND_HASH_FOREACH_END();
+	return true;
+}
+
+/* [kind, items, paint, clip]: a 'trapezoids' or 'triangles' command, its items as lists of six numbers, or as one
+ * packed string for each packing given. */
+static void phppq_lower_items(zval *out, const char *kind, const pq_doubles *items, zval *paint, zval *clip,
+	const phppq_packing *packings, uint32_t packed)
+{
+	zval list, item, name;
+	zend_array *command = zend_new_array(4);
+
+	if (packed == 0) {
+		array_init_size(&list, (uint32_t) (items->n / 6));
+		for (size_t i = 0; i < items->n; i += 6) {
+			array_init_size(&item, 6);
+			for (int k = 0; k < 6; k++) {
+				add_next_index_double(&item, items->v[i + k]);
+			}
+			zend_hash_next_index_insert_new(Z_ARRVAL(list), &item);
+		}
+	} else {
+		zval string;
+		array_init_size(&list, packed);
+		for (uint32_t k = 0; k < packed; k++) {
+			ZVAL_STR(&string, phppq_pack(items->v, items->n, 6, &packings[k]));
+			zend_hash_next_index_insert_new(Z_ARRVAL(list), &string);
+		}
+	}
+	ZVAL_STRING(&name, kind);
+	zend_hash_next_index_insert_new(command, &name);
+	zend_hash_next_index_insert_new(command, &list);
+	phppq_add_copy(command, paint);
+	phppq_add_copy(command, clip);
+	ZVAL_ARR(out, command);
+}
+
+/* Items of six numbers in a lowered command's list, flat; NULL when the list is not one. n set. emalloc'd. */
+static double *phppq_lower_list(zval *list, uint32_t *n)
+{
+	zval *item;
+	double *flat;
+	uint32_t at = 0;
+	bool ok = true;
+
+	if (list == NULL) {
+		return NULL;
+	}
+	ZVAL_DEREF(list);
+	if (Z_TYPE_P(list) != IS_ARRAY) {
+		return NULL;
+	}
+	flat = safe_emalloc(zend_hash_num_elements(Z_ARRVAL_P(list)) + 1, 6 * sizeof(double), 0);
+	ZEND_HASH_FOREACH_VAL(Z_ARRVAL_P(list), item) {
+		ZVAL_DEREF(item);
+		for (int k = 0; ok && k < 6; k++) {
+			ok = Z_TYPE_P(item) == IS_ARRAY && phppq_lower_number(Z_ARRVAL_P(item), (zend_ulong) k, &flat[6 * at + k]);
+		}
+		at++;
+	} ZEND_HASH_FOREACH_END();
+	if (!ok) {
+		efree(flat);
+		return NULL;
+	}
+	*n = at;
+	return flat;
+}
+
+PHP_METHOD(PixelQueue, lower)
+{
+	HashTable *command;
+	zend_string *form;
+	HashTable *packing = NULL;
+	phppq_packing packings[PHPPQ_MAX_PACKINGS];
+	uint32_t packed = 0;
+	phppq_queue *q;
+	zval *kind, *rule, *paint, *clip;
+	pq_shape shape;
+	pq_doubles traps = {0}, tris = {0};
+	bool ok = true, even_odd = false;
+	int want;
+
+	ZEND_PARSE_PARAMETERS_START(2, 3)
+		Z_PARAM_ARRAY_HT(command)
+		Z_PARAM_STR(form)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_ARRAY_HT_OR_NULL(packing)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (zend_string_equals_literal(form, "polygon")) {
+		want = 0;
+	} else if (zend_string_equals_literal(form, "trapezoids")) {
+		want = 1;
+	} else if (zend_string_equals_literal(form, "triangles")) {
+		want = 2;
+	} else {
+		zend_argument_value_error(2, "must be 'polygon', 'trapezoids' or 'triangles'");
+		RETURN_THROWS();
+	}
+	/* a polygon is always lists; trapezoids and triangles (six numbers an item) can be packed */
+	if (packing != NULL && !phppq_packings(packing, 6, packings, &packed)) {
+		RETURN_THROWS();
+	}
+	q = PHPPQ_THIS();
+	kind = zend_hash_index_find(command, 0);
+	if (kind == NULL || Z_TYPE_P(kind) != IS_STRING) {
+		RETURN_NULL();
+	}
+
+	/* lowered lists lower further: trapezoids to triangles. A packed form is the last. */
+	if (zend_string_equals_literal(Z_STR_P(kind), "trapezoids") || zend_string_equals_literal(Z_STR_P(kind), "triangles")) {
+		bool from_traps = zend_string_equals_literal(Z_STR_P(kind), "trapezoids");
+		uint32_t at = 0;
+		double *flat;
+
+		paint = zend_hash_index_find(command, 2);
+		clip = zend_hash_index_find(command, 3);
+		if (want != 2 || !from_traps || paint == NULL || clip == NULL
+			|| (flat = phppq_lower_list(zend_hash_index_find(command, 1), &at)) == NULL) {
+			RETURN_NULL();
+		}
+		ok = pq_lower_triangles(flat, at, &tris);
+		efree(flat);
+		if (!ok) {
+			pq_doubles_free(&tris);
+			zend_throw_error(NULL, "Out of memory lowering a command");
+			RETURN_THROWS();
+		}
+		phppq_lower_items(return_value, "triangles", &tris, paint, clip, packings, packed);
+		pq_doubles_free(&tris);
+		return;
+	}
+
+	pq_shape_init(&shape);
+	rule = &q->non_zero;
+	paint = clip = NULL;
+
+	if (zend_string_equals(Z_STR_P(kind), phppq_kind_path)) {
+		if (want == 0) {
+			RETURN_ARR(zend_array_dup(command));
+		}
+		rule = zend_hash_index_find(command, 2);
+		paint = zend_hash_index_find(command, 3);
+		clip = zend_hash_index_find(command, 4);
+		ok = rule != NULL && phppq_lower_contours(command, &shape);
+		even_odd = ok && zend_is_identical(rule, &q->even_odd);
+	} else if (zend_string_equals(Z_STR_P(kind), phppq_kind_ellipse)) {
+		double v[4];
+		ok = phppq_lower_number(command, 1, &v[0]) && phppq_lower_number(command, 2, &v[1]) && phppq_lower_number(command, 3, &v[2])
+			&& phppq_lower_number(command, 4, &v[3]) && pq_lower_ellipse(&shape, v[0], v[1], v[2], v[3]);
+		paint = zend_hash_index_find(command, 5);
+		clip = zend_hash_index_find(command, 6);
+	} else if (zend_string_equals(Z_STR_P(kind), phppq_kind_ring)) {
+		double v[5];
+		pq_shape ring;
+		pq_shape_init(&ring);
+		ok = phppq_lower_number(command, 1, &v[0]) && phppq_lower_number(command, 2, &v[1]) && phppq_lower_number(command, 3, &v[2])
+			&& phppq_lower_number(command, 4, &v[3]) && phppq_lower_number(command, 5, &v[4])
+			&& pq_lower_ellipse(&ring, v[0], v[1], v[2], v[3]) && pq_lower_stroke(&shape, ring.xy, ring.points, v[4], true);
+		pq_shape_free(&ring);
+		paint = zend_hash_index_find(command, 6);
+		clip = zend_hash_index_find(command, 7);
+	} else if (zend_string_equals(Z_STR_P(kind), phppq_kind_roundrect) || zend_string_equals(Z_STR_P(kind), phppq_kind_roundring)) {
+		bool ringed = zend_string_equals(Z_STR_P(kind), phppq_kind_roundring);
+		double box[4], radii[4], inset = 0.0;
+		zval *r = zend_hash_index_find(command, 5);
+		ok = phppq_lower_number(command, 1, &box[0]) && phppq_lower_number(command, 2, &box[1]) && phppq_lower_number(command, 3, &box[2])
+			&& phppq_lower_number(command, 4, &box[3]) && r != NULL && Z_TYPE_P(r) == IS_ARRAY
+			&& phppq_lower_number(Z_ARRVAL_P(r), 0, &radii[0]) && phppq_lower_number(Z_ARRVAL_P(r), 1, &radii[1])
+			&& phppq_lower_number(Z_ARRVAL_P(r), 2, &radii[2]) && phppq_lower_number(Z_ARRVAL_P(r), 3, &radii[3])
+			&& (!ringed || phppq_lower_number(command, 6, &inset));
+		if (ok) {
+			double x0 = box[0], y0 = box[1], x1 = box[2], y1 = box[3];
+			ok = pq_lower_outline(&shape, x0, y0, x1 - x0, y1 - y0, radii);
+			if (ok && ringed && x1 - x0 > 2 * inset && y1 - y0 > 2 * inset) {
+				double inner[4];
+				for (int k = 0; k < 4; k++) {
+					double left = radii[k] - inset;
+					inner[k] = left > 0.0 ? left : 0.0;
+				}
+				ok = pq_lower_outline(&shape, x0 + inset, y0 + inset, x1 - x0 - 2 * inset, y1 - y0 - 2 * inset, inner);
+				rule = &q->even_odd;
+				even_odd = true;
+			}
+		}
+		paint = zend_hash_index_find(command, ringed ? 7 : 6);
+		clip = zend_hash_index_find(command, ringed ? 8 : 7);
+	} else if (zend_string_equals(Z_STR_P(kind), phppq_kind_polyline)) {
+		uint32_t n = 0;
+		double width;
+		zval *closed = zend_hash_index_find(command, 3);
+		double *points = phppq_lower_points(command, 1, &n);
+		ok = points != NULL && phppq_lower_number(command, 2, &width) && closed != NULL
+			&& pq_lower_stroke(&shape, points, n, width, zend_is_true(closed));
+		if (points != NULL) {
+			efree(points);
+		}
+		paint = zend_hash_index_find(command, 4);
+		clip = zend_hash_index_find(command, 5);
+	} else {
+		pq_shape_free(&shape);
+		RETURN_NULL();
+	}
+
+	/* a path with no contours is still a path: its trapezoids are none. Any other shape with none has no outline. */
+	if (!ok || paint == NULL || clip == NULL || (shape.contours == 0 && !zend_string_equals(Z_STR_P(kind), phppq_kind_path))) {
+		pq_shape_free(&shape);
+		RETURN_NULL();
+	}
+
+	if (want == 0) {
+		zval contours, contour;
+		zend_array *list = zend_new_array(5);
+		uint32_t at = 0;
+
+		array_init_size(&contours, shape.contours);
+		for (uint32_t c = 0; c < shape.contours; c++) {
+			phppq_points(&contour, shape.xy + 2 * at, shape.counts[c]);
+			zend_hash_next_index_insert_new(Z_ARRVAL(contours), &contour);
+			at += shape.counts[c];
+		}
+		phppq_add_kind(list, phppq_kind_path);
+		zend_hash_next_index_insert_new(list, &contours);
+		phppq_add_copy(list, rule);
+		phppq_add_copy(list, paint);
+		phppq_add_copy(list, clip);
+		pq_shape_free(&shape);
+		RETURN_ARR(list);
+	}
+
+	ok = pq_lower_trapezoids(&shape, even_odd, &traps);
+	pq_shape_free(&shape);
+	if (ok && want == 2) {
+		ok = pq_lower_triangles(traps.v, traps.n / 6, &tris);
+	}
+	if (!ok) {
+		pq_doubles_free(&traps);
+		pq_doubles_free(&tris);
+		zend_throw_error(NULL, "Out of memory lowering a command");
+		RETURN_THROWS();
+	}
+	phppq_lower_items(return_value, want == 1 ? "trapezoids" : "triangles", want == 1 ? &traps : &tris, paint, clip, packings, packed);
+	pq_doubles_free(&traps);
+	pq_doubles_free(&tris);
+}
+
 PHP_METHOD(PixelQueue, append)
 {
 	zval *command;
@@ -1079,7 +1538,7 @@ PHP_METHOD(PixelQueue, clear)
 PHP_METHOD(PixelQueue, fillRect)
 {
 	double x, y, width, height, corners[8];
-	zend_long rgba;
+	zval *rgba;
 	phppq_queue *q;
 
 	ZEND_PARSE_PARAMETERS_START(5, 5)
@@ -1087,10 +1546,13 @@ PHP_METHOD(PixelQueue, fillRect)
 		Z_PARAM_DOUBLE(y)
 		Z_PARAM_DOUBLE(width)
 		Z_PARAM_DOUBLE(height)
-		Z_PARAM_LONG(rgba)
+		Z_PARAM_ZVAL(rgba)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 5)) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "fillRect") || !phppq_finite(x, "x") || !phppq_finite(y, "y") || !phppq_finite(width, "width") || !phppq_finite(height, "height")) {
 		RETURN_THROWS();
 	}
@@ -1106,7 +1568,7 @@ PHP_METHOD(PixelQueue, fillRect)
 PHP_METHOD(PixelQueue, strokeRect)
 {
 	double x, y, width, height, stroke, corners[8];
-	zend_long rgba;
+	zval *rgba;
 	phppq_queue *q;
 
 	ZEND_PARSE_PARAMETERS_START(6, 6)
@@ -1114,11 +1576,14 @@ PHP_METHOD(PixelQueue, strokeRect)
 		Z_PARAM_DOUBLE(y)
 		Z_PARAM_DOUBLE(width)
 		Z_PARAM_DOUBLE(height)
-		Z_PARAM_LONG(rgba)
+		Z_PARAM_ZVAL(rgba)
 		Z_PARAM_DOUBLE(stroke)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 5)) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "strokeRect") || !phppq_finite(x, "x") || !phppq_finite(y, "y") || !phppq_finite(width, "width") || !phppq_finite(height, "height")
 		|| !phppq_finite(stroke, "stroke")) {
 		RETURN_THROWS();
@@ -1134,7 +1599,7 @@ PHP_METHOD(PixelQueue, strokeRect)
 PHP_METHOD(PixelQueue, line)
 {
 	double x0, y0, x1, y1, stroke, points[4];
-	zend_long rgba;
+	zval *rgba;
 	phppq_queue *q;
 
 	ZEND_PARSE_PARAMETERS_START(6, 6)
@@ -1142,11 +1607,14 @@ PHP_METHOD(PixelQueue, line)
 		Z_PARAM_DOUBLE(y0)
 		Z_PARAM_DOUBLE(x1)
 		Z_PARAM_DOUBLE(y1)
-		Z_PARAM_LONG(rgba)
+		Z_PARAM_ZVAL(rgba)
 		Z_PARAM_DOUBLE(stroke)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 5)) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "line") || !phppq_finite(x0, "x0") || !phppq_finite(y0, "y0") || !phppq_finite(x1, "x1") || !phppq_finite(y1, "y1")
 		|| !phppq_finite(stroke, "stroke")) {
 		RETURN_THROWS();
@@ -1160,7 +1628,7 @@ PHP_METHOD(PixelQueue, line)
 PHP_METHOD(PixelQueue, fillTriangle)
 {
 	double x0, y0, x1, y1, x2, y2, points[6];
-	zend_long rgba;
+	zval *rgba;
 	phppq_queue *q;
 
 	ZEND_PARSE_PARAMETERS_START(7, 7)
@@ -1170,10 +1638,13 @@ PHP_METHOD(PixelQueue, fillTriangle)
 		Z_PARAM_DOUBLE(y1)
 		Z_PARAM_DOUBLE(x2)
 		Z_PARAM_DOUBLE(y2)
-		Z_PARAM_LONG(rgba)
+		Z_PARAM_ZVAL(rgba)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 7)) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "fillTriangle") || !phppq_finite(x0, "x0") || !phppq_finite(y0, "y0") || !phppq_finite(x1, "x1") || !phppq_finite(y1, "y1")
 		|| !phppq_finite(x2, "x2") || !phppq_finite(y2, "y2")) {
 		RETURN_THROWS();
@@ -1182,6 +1653,285 @@ PHP_METHOD(PixelQueue, fillTriangle)
 		RETURN_THROWS();
 	}
 	phppq_record_path(q, points, 3, NULL, 0, &q->non_zero, rgba);
+}
+
+/* ------------------------------------------------------------------- paths */
+
+/* How far a flattened curve may stray from the curve, in pixels after the transform. */
+#define PQ_CURVE_TOLERANCE 0.25
+/* The most straight pieces one curve becomes. */
+#define PQ_CURVE_PIECES 1024
+
+/* A path's subpaths, flattened: every point after the transform, and where each subpath starts and ends. */
+typedef struct {
+	double *points;    /* 2 doubles a point */
+	uint32_t n, cap;   /* points held, points room */
+	uint32_t *starts;  /* the index of each subpath's first point */
+	bool *closed;      /* whether each subpath was closed by a Z */
+	uint32_t subpaths, subpaths_cap;
+} phppq_flat;
+
+static void phppq_flat_free(phppq_flat *f)
+{
+	if (f->points) efree(f->points);
+	if (f->starts) efree(f->starts);
+	if (f->closed) efree(f->closed);
+}
+
+static void phppq_flat_point(phppq_flat *f, double x, double y)
+{
+	if (f->n == f->cap) {
+		f->cap = f->cap ? 2 * f->cap : 64;
+		f->points = safe_erealloc(f->points, f->cap, 2 * sizeof(double), 0);
+	}
+	f->points[2 * f->n] = x;
+	f->points[2 * f->n + 1] = y;
+	f->n++;
+}
+
+static void phppq_flat_subpath(phppq_flat *f)
+{
+	if (f->subpaths == f->subpaths_cap) {
+		f->subpaths_cap = f->subpaths_cap ? 2 * f->subpaths_cap : 8;
+		f->starts = safe_erealloc(f->starts, f->subpaths_cap, sizeof(uint32_t), 0);
+		f->closed = safe_erealloc(f->closed, f->subpaths_cap, sizeof(bool), 0);
+	}
+	f->starts[f->subpaths] = f->n;
+	f->closed[f->subpaths] = false;
+	f->subpaths++;
+}
+
+/* How many straight pieces a curve whose largest second difference is dd becomes: ceil(sqrt(dd * k / (4 tolerance))),
+ * 1 to PQ_CURVE_PIECES; k is 1 for a quadratic, 3 for a cubic. */
+static uint32_t phppq_pieces(double dd, double k)
+{
+	double n = ceil(sqrt(dd * k / (4.0 * PQ_CURVE_TOLERANCE)));
+
+	if (!(n >= 1.0)) {
+		return 1;
+	}
+	return n > PQ_CURVE_PIECES ? PQ_CURVE_PIECES : (uint32_t) n;
+}
+
+static double phppq_length(double x, double y)
+{
+	return sqrt(x * x + y * y);
+}
+
+/* An op's numbers into out, as many as its letter takes; false with a ValueError when it is not that. */
+static bool phppq_op_numbers(HashTable *op, uint32_t count, double *out, uint32_t arg)
+{
+	for (uint32_t k = 0; k < count; k++) {
+		zval *value = zend_hash_index_find(op, k + 1);
+
+		if (value == NULL) {
+			zend_argument_value_error(arg, "must be a list of path ops");
+			return false;
+		}
+		ZVAL_DEREF(value);
+		if (Z_TYPE_P(value) == IS_LONG) {
+			out[k] = (double) Z_LVAL_P(value);
+		} else if (Z_TYPE_P(value) == IS_DOUBLE) {
+			out[k] = Z_DVAL_P(value);
+		} else {
+			zend_argument_value_error(arg, "must be a list of path ops");
+			return false;
+		}
+	}
+	return true;
+}
+
+/* The ops ['M', x, y], ['L', x, y], ['Q', cx, cy, x, y], ['C', c1x, c1y, c2x, c2y, x, y] and ['Z'], through the
+ * transform and flattened into f. Every number is checked in order, finite then within the limit once transformed,
+ * named x or y; a curve's points are its transformed control points' Bernstein sums at t = i / n, worked in the
+ * order written. False with a ValueError for ops of the wrong form, or a refusal. */
+static bool phppq_flatten_ops(const phppq_queue *q, HashTable *ops, uint32_t arg, phppq_flat *f)
+{
+	zval *op;
+	double at[2] = {0.0, 0.0}, start[2] = {0.0, 0.0};
+	bool open = false, closed = false;
+
+	if (!zend_array_is_list(ops)) {
+		zend_argument_value_error(arg, "must be a list of path ops");
+		return false;
+	}
+	ZEND_HASH_FOREACH_VAL(ops, op) {
+		zval *letter;
+		double n[6], p[6];
+		uint32_t count;
+		char c;
+
+		ZVAL_DEREF(op);
+		if (Z_TYPE_P(op) != IS_ARRAY || !zend_array_is_list(Z_ARRVAL_P(op))
+			|| (letter = zend_hash_index_find(Z_ARRVAL_P(op), 0)) == NULL || Z_TYPE_P(letter) != IS_STRING || Z_STRLEN_P(letter) != 1) {
+			zend_argument_value_error(arg, "must be a list of path ops");
+			return false;
+		}
+		c = Z_STRVAL_P(letter)[0];
+		count = c == 'M' || c == 'L' ? 2 : c == 'Q' ? 4 : c == 'C' ? 6 : c == 'Z' ? 0 : 99;
+		if (count == 99 || zend_hash_num_elements(Z_ARRVAL_P(op)) != count + 1 || !phppq_op_numbers(Z_ARRVAL_P(op), count, n, arg)) {
+			if (count == 99 || zend_hash_num_elements(Z_ARRVAL_P(op)) != count + 1) {
+				zend_argument_value_error(arg, "must be a list of path ops");
+			}
+			return false;
+		}
+		for (uint32_t k = 0; k < count; k += 2) {
+			if (!phppq_finite(n[k], "x") || !phppq_finite(n[k + 1], "y") || !phppq_point(q, n[k], n[k + 1], "x", "y", p + k)) {
+				return false;
+			}
+		}
+		if (c == 'M') {
+			phppq_flat_subpath(f);
+			phppq_flat_point(f, p[0], p[1]);
+			at[0] = start[0] = p[0];
+			at[1] = start[1] = p[1];
+			open = true;
+			closed = false;
+			continue;
+		}
+		if (c == 'Z') {
+			if (open && !closed) {
+				f->closed[f->subpaths - 1] = true;
+				at[0] = start[0];
+				at[1] = start[1];
+				closed = true;
+			}
+			continue;
+		}
+		if (!open) {
+			zend_argument_value_error(arg, "must start with an 'M' op");
+			return false;
+		}
+		if (closed) {
+			/* a segment after Z starts a new subpath where the closed one started */
+			phppq_flat_subpath(f);
+			phppq_flat_point(f, start[0], start[1]);
+			closed = false;
+		}
+		if (c == 'L') {
+			phppq_flat_point(f, p[0], p[1]);
+			at[0] = p[0];
+			at[1] = p[1];
+		} else if (c == 'Q') {
+			uint32_t pieces = phppq_pieces(phppq_length(at[0] - 2.0 * p[0] + p[2], at[1] - 2.0 * p[1] + p[3]), 1.0);
+
+			for (uint32_t i = 1; i < pieces; i++) {
+				double t = (double) i / (double) pieces, mt = 1.0 - t;
+				double a = mt * mt, b = 2.0 * mt * t, d = t * t;
+
+				phppq_flat_point(f, (a * at[0] + b * p[0]) + d * p[2], (a * at[1] + b * p[1]) + d * p[3]);
+			}
+			phppq_flat_point(f, p[2], p[3]);
+			at[0] = p[2];
+			at[1] = p[3];
+		} else {
+			double d1 = phppq_length(at[0] - 2.0 * p[0] + p[2], at[1] - 2.0 * p[1] + p[3]);
+			double d2 = phppq_length(p[0] - 2.0 * p[2] + p[4], p[1] - 2.0 * p[3] + p[5]);
+			uint32_t pieces = phppq_pieces(d1 > d2 ? d1 : d2, 3.0);
+
+			for (uint32_t i = 1; i < pieces; i++) {
+				double t = (double) i / (double) pieces, mt = 1.0 - t;
+				double a = mt * mt * mt, b = 3.0 * mt * mt * t, e = 3.0 * mt * t * t, d = t * t * t;
+
+				phppq_flat_point(f, ((a * at[0] + b * p[0]) + e * p[2]) + d * p[4], ((a * at[1] + b * p[1]) + e * p[3]) + d * p[5]);
+			}
+			phppq_flat_point(f, p[4], p[5]);
+			at[0] = p[4];
+			at[1] = p[5];
+		}
+	} ZEND_HASH_FOREACH_END();
+	return true;
+}
+
+PHP_METHOD(PixelQueue, fillPath)
+{
+	HashTable *ops;
+	bool even_odd;
+	zval *rgba;
+	phppq_queue *q;
+	phppq_flat f = {0};
+	zval list, command;
+	zend_array *row;
+	double reach[4];
+	bool reached = false;
+
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_ARRAY_HT(ops)
+		Z_PARAM_BOOL(even_odd)
+		Z_PARAM_ZVAL(rgba)
+	ZEND_PARSE_PARAMETERS_END();
+
+	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 3)) {
+		RETURN_THROWS();
+	}
+	if (!phppq_open(q, "fillPath")) {
+		RETURN_THROWS();
+	}
+	if (!phppq_flatten_ops(q, ops, 1, &f)) {
+		phppq_flat_free(&f);
+		RETURN_THROWS();
+	}
+	array_init_size(&list, f.subpaths);
+	for (uint32_t s = 0; s < f.subpaths; s++) {
+		uint32_t from = f.starts[s], to = s + 1 < f.subpaths ? f.starts[s + 1] : f.n;
+		zval contour;
+
+		phppq_points(&contour, f.points + 2 * from, to - from);
+		zend_hash_next_index_insert_new(Z_ARRVAL(list), &contour);
+		phppq_reach(f.points + 2 * from, to - from, reach, reached);
+		reached = true;
+	}
+	phppq_flat_free(&f);
+
+	if (!reached || phppq_clip_empty(q)) {
+		zval_ptr_dtor(&list);
+		return;
+	}
+	row = zend_new_array(5);
+	phppq_add_kind(row, phppq_kind_path);
+	zend_hash_next_index_insert_new(row, &list);
+	phppq_add_copy(row, even_odd ? &q->even_odd : &q->non_zero);
+	phppq_add_paint(row, q, rgba);
+	phppq_add_copy(row, &q->clip_value);
+	ZVAL_ARR(&command, row);
+	phppq_meta_reach(q, phppq_frame_add(&q->open, &command), reach[0] - 1.0, reach[1] - 1.0, reach[2] + 1.0, reach[3] + 1.0);
+}
+
+PHP_METHOD(PixelQueue, strokePath)
+{
+	HashTable *ops;
+	zval *rgba;
+	double stroke;
+	phppq_queue *q;
+	phppq_flat f = {0};
+
+	ZEND_PARSE_PARAMETERS_START(3, 3)
+		Z_PARAM_ARRAY_HT(ops)
+		Z_PARAM_ZVAL(rgba)
+		Z_PARAM_DOUBLE(stroke)
+	ZEND_PARSE_PARAMETERS_END();
+
+	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 2)) {
+		RETURN_THROWS();
+	}
+	if (!phppq_open(q, "strokePath")) {
+		RETURN_THROWS();
+	}
+	if (!phppq_flatten_ops(q, ops, 1, &f) || !phppq_finite(stroke, "stroke")) {
+		phppq_flat_free(&f);
+		RETURN_THROWS();
+	}
+	for (uint32_t s = 0; s < f.subpaths; s++) {
+		uint32_t from = f.starts[s], to = s + 1 < f.subpaths ? f.starts[s + 1] : f.n;
+
+		if (to - from >= 2 && !phppq_record_stroked(q, f.points + 2 * from, to - from, stroke, f.closed[s], rgba)) {
+			phppq_flat_free(&f);
+			RETURN_THROWS();
+		}
+	}
+	phppq_flat_free(&f);
 }
 
 /* An ellipse under a transform that keeps its axes: its centre and radii in pixels; false with a refusal thrown. */
@@ -1206,7 +1956,7 @@ static bool phppq_upright(const phppq_queue *q, double cx, double cy, double rx,
 PHP_METHOD(PixelQueue, fillEllipse)
 {
 	double cx, cy, rx, ry, e[4];
-	zend_long rgba;
+	zval *rgba;
 	phppq_queue *q;
 	zval command;
 	zend_array *list;
@@ -1216,10 +1966,13 @@ PHP_METHOD(PixelQueue, fillEllipse)
 		Z_PARAM_DOUBLE(cy)
 		Z_PARAM_DOUBLE(rx)
 		Z_PARAM_DOUBLE(ry)
-		Z_PARAM_LONG(rgba)
+		Z_PARAM_ZVAL(rgba)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 5)) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "fillEllipse") || !phppq_finite(cx, "cx") || !phppq_finite(cy, "cy") || !phppq_finite(rx, "rx") || !phppq_finite(ry, "ry")) {
 		RETURN_THROWS();
 	}
@@ -1248,7 +2001,7 @@ PHP_METHOD(PixelQueue, fillEllipse)
 	phppq_add_double(list, e[1]);
 	phppq_add_double(list, e[2]);
 	phppq_add_double(list, e[3]);
-	phppq_add_long(list, rgba);
+	phppq_add_paint(list, q, rgba);
 	phppq_add_copy(list, &q->clip_value);
 	ZVAL_ARR(&command, list);
 	phppq_meta_reach(q, phppq_frame_add(&q->open, &command), e[0] - e[2] - 1.0, e[1] - e[3] - 1.0, e[0] + e[2] + 1.0, e[1] + e[3] + 1.0);
@@ -1257,7 +2010,7 @@ PHP_METHOD(PixelQueue, fillEllipse)
 PHP_METHOD(PixelQueue, strokeEllipse)
 {
 	double cx, cy, rx, ry, stroke, e[4];
-	zend_long rgba;
+	zval *rgba;
 	phppq_queue *q;
 	zval command;
 	zend_array *list;
@@ -1267,11 +2020,14 @@ PHP_METHOD(PixelQueue, strokeEllipse)
 		Z_PARAM_DOUBLE(cy)
 		Z_PARAM_DOUBLE(rx)
 		Z_PARAM_DOUBLE(ry)
-		Z_PARAM_LONG(rgba)
+		Z_PARAM_ZVAL(rgba)
 		Z_PARAM_DOUBLE(stroke)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	if (!phppq_paint_ok(rgba, 5)) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "strokeEllipse") || !phppq_finite(cx, "cx") || !phppq_finite(cy, "cy") || !phppq_finite(rx, "rx") || !phppq_finite(ry, "ry")
 		|| !phppq_finite(stroke, "stroke")) {
 		RETURN_THROWS();
@@ -1301,7 +2057,7 @@ PHP_METHOD(PixelQueue, strokeEllipse)
 	phppq_add_double(list, e[2]);
 	phppq_add_double(list, e[3]);
 	phppq_add_double(list, stroke);
-	phppq_add_long(list, rgba);
+	phppq_add_paint(list, q, rgba);
 	phppq_add_copy(list, &q->clip_value);
 	ZVAL_ARR(&command, list);
 	phppq_meta_reach(q, phppq_frame_add(&q->open, &command),
@@ -1346,8 +2102,8 @@ static bool phppq_radii(HashTable *radii, double width, double height, double he
 PHP_METHOD(PixelQueue, roundRect)
 {
 	double x, y, width, height, border_width, radii[4], inner[4], bw, scale, inset, a[2], b[2];
-	zend_long fill, border = 0;
-	bool no_border = true, hollow;
+	zval *fill, *border;
+	bool no_border, hollow;
 	HashTable *given;
 	phppq_queue *q;
 
@@ -1357,12 +2113,16 @@ PHP_METHOD(PixelQueue, roundRect)
 		Z_PARAM_DOUBLE(width)
 		Z_PARAM_DOUBLE(height)
 		Z_PARAM_ARRAY_HT(given)
-		Z_PARAM_LONG(fill)
-		Z_PARAM_LONG_OR_NULL(border, no_border)
+		Z_PARAM_ZVAL(fill)
+		Z_PARAM_ZVAL(border)
 		Z_PARAM_DOUBLE(border_width)
 	ZEND_PARSE_PARAMETERS_END();
 
 	q = PHPPQ_THIS();
+	no_border = Z_TYPE_P(border) == IS_NULL;
+	if (!phppq_paint_ok(fill, 6) || (!no_border && !phppq_paint_ok(border, 7))) {
+		RETURN_THROWS();
+	}
 	if (!phppq_open(q, "roundRect") || !phppq_finite(x, "x") || !phppq_finite(y, "y") || !phppq_finite(width, "width") || !phppq_finite(height, "height")
 		|| !phppq_finite(border_width, "borderWidth") || !phppq_radii(given, width, height, radii)) {
 		RETURN_THROWS();

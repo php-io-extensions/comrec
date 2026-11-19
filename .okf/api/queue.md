@@ -5,11 +5,11 @@ description: Constants, PixelQueue: every method, the commands, the arithmetic o
 resource: stubs/
 tags: [queue, display-list, damage, transform, c]
 status: draft
-generated: { by: claude-opus/5.5, at: 2026-11-17T01:40:00Z }
+generated: { by: claude-opus/5.5, at: 2026-11-19T06:00:00Z }
 sources:
   - id: stubs
     resource: stubs/
-    title: pixel_queue.stub.php, PixelQueue.stub.php, PixelQueueException.stub.php
+    title: comrec.stub.php, PixelQueue.stub.php, PixelQueueException.stub.php
   - id: class
     resource: src/PixelQueue.c
     title: The class
@@ -56,6 +56,8 @@ Every shape first checks that a frame is open, then that each argument is finite
 | `clear(rgba)` | `['clear', rgba]`, whatever the clip. |
 | `fillRect(x, y, w, h, rgba)` | `['path', [[tl, tr, br, bl]], nonZero, rgba, clip]`. |
 | `fillTriangle(...)` | `['path', [[p0, p1, p2]], nonZero, rgba, clip]`. |
+| `fillPath(ops, evenOdd, rgba)` | `['path', contours, rule, rgba, clip]`: every subpath of the ops `['M', x, y]`, `['L', x, y]`, `['Q', cx, cy, x, y]`, `['C', c1x, c1y, c2x, c2y, x, y]`, `['Z']`, through the transform, curves flattened (see *Flattening a curve*); `rule` is `evenOdd` or `nonZero` as given to the constructor. A segment after `Z` starts a new subpath where the closed one began. Reach: the points, one pixel out. Nothing for no points. Every number is checked in order, finite then within the limit once transformed, named `x` or `y`; ops of the wrong form, or not starting with `M`, are a `ValueError`. |
+| `strokePath(ops, rgba, stroke)` | A `['polyline', points, stroke, closed, rgba, clip]` for every subpath of two points or more, flattened as `fillPath()`'s, `closed` where a `Z` closes it, the stroke scaled as `line()`'s. The ops are checked before the stroke. |
 | `strokeRect(x, y, w, h, rgba, stroke)` | `['polyline', [tl, tr, br, bl], stroke', true, rgba, clip]`. |
 | `line(x0, y0, x1, y1, rgba, stroke)` | `['polyline', [p0, p1], stroke', false, rgba, clip]`. |
 | `fillEllipse(cx, cy, rx, ry, rgba)` | Axes kept (`b == 0` and `c == 0`): `['ellipse', cx', cy', rx·|a|, ry·|d|, rgba, clip]`. Otherwise a `path` of the flattened ellipse. |
@@ -90,6 +92,20 @@ Every shape first checks that a frame is open, then that each argument is finite
 For contours, points and spans the entry is read when a box is asked for, not when the command is appended. An entry that is not what `how` says gives the command no box.
 
 `restless` marks a command whose pixels can change with nothing in it changing. `reads` is `[x, y, width, height, reach]`: the command reads the pixels under that rect and `reach` around it.
+
+# Lowering
+
+`lower(command, form)` gives a recorded command in a simpler form, for a drawer whose library cannot draw it as it is. It reads nothing but the command and the two rule values the queue was made with, and records nothing. The steps are `src/lower.c`, plain C; topside's `Surface\Rendering\CommandRecorders\Lowering` is the same steps in PHP and gives the same numbers bit for bit.
+
+- `'polygon'`: `['path', contours, rule, paint, clip]`. A path comes back as it is. An ellipse is its circle's sides (the shapes' rule, from the larger radius) from angle 0; a rounded box its outline clockwise from the top-left corner, a corner of radius `r` in `(sides(r) + 3) / 4` steps; a rounded ring that outline and, when the inset leaves a hole, the inset outline with radii `max(0, r − inset)`, under the even-odd value. A stroke (a polyline, a ring's ellipse) is the left side going forward then the left side of the way back: one contour open, two closed, butt ends, non-zero. A side's left normal is `(−dy, dx) / length · width / 2`. A corner turning away from the side is mitered at the corner plus `(n0 + n1) · 1 / (2 cos²)`, `cos = |n0 + n1| / width`, while `1 / cos ≤ 4`, else beveled; a corner turning towards it, or a way straight back, goes through the corner's point.
+- `'trapezoids'`: `['trapezoids', [[top, bottom, left at top, left at bottom, right at top, right at bottom], ...], paint, clip]`. Edges (no flat ones) sweep down between the sorted heights of their ends. A band's edges are ordered by their x halfway down, then by index (an insertion sort from the last band's order, which it is near). Where two neighbours' order differs at the top or bottom, the band is cut at the earliest such crossing more than 1e-9 inside it, top part first, except under non-zero inside a *sealed group*: the edges between two places where the edges left of them are the same at the band's top and at its bottom (ordered there by x, then x halfway, then index) reorder only among themselves, and if the winding left of the group plus all their downs is above 0, or plus all their ups below 0, no order of them empties the area between them, so their crossings change nothing and are not cut. In a band with no cut, the rule's spans (winding ≠ 0, or odd) are found left to right, each by its left and right edge. A trapezoid stays open while a span with the same two edges follows it; one that does not continue ends at the band's top, its bottom corners worked out from its own edges (`x0 + (y - y0) · ((x1 - x0) / (y1 - y0))`), and is given then, in the order the open ones were found; the rest end at the last height.
+- `'triangles'`: `['triangles', [[x0, y0, x1, y1, x2, y2], ...], paint, clip]`: each trapezoid as (left top, right top, right bottom) and (left top, right bottom, left bottom), without one whose top or bottom has no width.
+
+Each form lowers from the one before: a `'trapezoids'` command as `lower()` gives it lowers to `'triangles'` without being cut again (its numbers at 0 to 5, ints or floats, read as floats), and to no other form. Velvet hands each form to the next.
+
+A third argument, `packing`, gives a `'trapezoids'` or `'triangles'` command's items as packed strings in place of lists: a list of 1 to 8 `[encoding, fields]` pairs, one string each. `encoding` is `'f32'` (little-endian float32) or `'fixed16'` (little-endian int32, each number times 65536 rounded half away from zero, held to int32); `fields` are the places in an item (0 to 5) each struct field holds, in order, repeats allowed. Each string is every item's fields in turn. A drawer states the layout; the queue knows no library. A `'polygon'` is always lists, and a packed command lowers no further.
+
+null for a command with no outline (`'clear'`, `'shadow'`, `'glyphs'`) or one it cannot read; a `ValueError` for any other form, or a packing that is not as described.
 
 # Boxes
 
@@ -130,3 +146,16 @@ Argument names are the stub's: `x`, `y`, `width`, `height`, `stroke`, `x0`..`y2`
 [^stubs]: The stubs are the declaration: every method and constant, with its types.
 [^class]: `src/PixelQueue.c`. The kind strings are interned in `MINIT`.
 [^boxes]: `src/boxes.c`, plain C with no Zend.
+
+
+## Flattening a curve
+
+A path's curves are flattened after the transform: its control points go through it first, then the curve is cut into `n` straight pieces at even steps of `t`, so a curve drawn larger gets more pieces.
+
+* Pieces: a quadratic's `n = ceil(sqrt(d / (4 × 0.25)))` with `d = |p0 − 2p1 + p2|`; a cubic's `n = ceil(sqrt(3d / (4 × 0.25)))` with `d` the larger of `|p0 − 2p1 + p2|` and `|p1 − 2p2 + p3|`. `|v|` is `sqrt(x·x + y·y)`. `n` is at least 1 and at most 1024. The 0.25 is the most a piece strays from the curve, in pixels.
+* Points: for `i` = 1 to `n − 1`, `t = i / n`, `mt = 1 − t`. A quadratic's `x = (a·x0 + b·x1) + d·x2` with `a = mt·mt`, `b = 2·mt·t`, `d = t·t`; a cubic's `x = ((a·x0 + b·x1) + e·x2) + d·x3` with `a = mt·mt·mt`, `b = 3·mt·mt·t`, `e = 3·mt·t·t`, `d = t·t·t`; each product left to right, `y` the same. The last point is the curve's end as given.
+
+
+## Paints
+
+`fillRect`, `strokeRect`, `line`, `fillTriangle`, `fillEllipse`, `strokeEllipse`, `roundRect` (fill and border), `fillPath` and `strokePath` take a paint where they took an `rgba`: an int colour, `0xRRGGBBAA`, or a gradient, a list of four `[kind, geometry, stops, spread]`. An int goes into the command as it is. A gradient goes in as given with the transform it is drawn through appended, `[a, b, c, d, e, f]`: a list of five. The queue reads nothing inside a gradient: what kind, geometry, stops and spread mean is the caller's and the drawer's. A paint that is neither an int nor a list of four is a `ValueError`, checked before anything else. `clear`, `shadow` and `glyphs` keep an int colour.

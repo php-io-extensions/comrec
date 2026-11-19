@@ -1,13 +1,13 @@
 <div align="center" id="header">
 
-<h1>ext-pixel-queue</h1>
+<h1>ext-comrec</h1>
 
 <h3>A frame of drawing commands in C, and what changed since the last one, for PHP 8.4+</h3>
 
-[![CI](https://img.shields.io/github/actions/workflow/status/php-io-extensions/pixel-queue/ci.yml?style=flat-square&label=CI)](https://github.com/php-io-extensions/pixel-queue/actions/workflows/ci.yml)
-[![Packagist](https://img.shields.io/packagist/v/php-io-extensions/pixel-queue?style=flat-square)](https://packagist.org/packages/php-io-extensions/pixel-queue)
-[![PHP](https://img.shields.io/packagist/dependency-v/php-io-extensions/pixel-queue/php?style=flat-square&label=PHP)](https://packagist.org/packages/php-io-extensions/pixel-queue)
-[![License](https://img.shields.io/github/license/php-io-extensions/pixel-queue?style=flat-square)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/php-io-extensions/comrec/ci.yml?style=flat-square&label=CI)](https://github.com/php-io-extensions/comrec/actions/workflows/ci.yml)
+[![Packagist](https://img.shields.io/packagist/v/php-io-extensions/comrec?style=flat-square)](https://packagist.org/packages/php-io-extensions/comrec)
+[![PHP](https://img.shields.io/packagist/dependency-v/php-io-extensions/comrec/php?style=flat-square&label=PHP)](https://packagist.org/packages/php-io-extensions/comrec)
+[![License](https://img.shields.io/github/license/php-io-extensions/comrec?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-linux_%7C_macos-blue?style=flat-square&logo=linux&logoColor=white)](#requirements)
 [![OKF](https://img.shields.io/badge/OKF-0.2-6f42c1?style=flat-square&label=knowledge%20bundle)](.okf/index.md)
 [![PIE](https://img.shields.io/badge/PIE-installable-4f5b93?style=flat-square&logo=php&logoColor=white)](https://github.com/php/pie)
@@ -16,7 +16,7 @@
 
 A program that draws a frame many times a second rarely needs to repaint all of it. To repaint only what changed it has to remember the last frame, compare the new one with it, and work out which pixels the differences cover. Before that, every shape it draws has to go through the current transform and be checked. In PHP both are loops of small steps for every shape, every frame.
 
-<b>ext-pixel-queue</b> does both in C. `PixelQueue` records shapes as commands under a transform and a clip, keeps the last frame, and answers the rects that differ between the two. It draws nothing: the commands it returns are plain PHP lists for whatever paints them. It has no dependency.
+<b>ext-comrec</b> does both in C. `PixelQueue` records shapes as commands under a transform and a clip, keeps the last frame, and answers the rects that differ between the two. It draws nothing: the commands it returns are plain PHP lists for whatever paints them. It has no dependency.
 
 ## Basic usage
 
@@ -85,7 +85,7 @@ $children = $queue->leave();
 ### With PHP PIE (recommended)
 
 ```bash
-pie install php-io-extensions/pixel-queue
+pie install php-io-extensions/comrec
 ```
 
 ### Manually (install script)
@@ -99,17 +99,17 @@ pie install php-io-extensions/pixel-queue
 
 ```bash
 phpize
-./configure --enable-pixel-queue
+./configure --enable-comrec
 make
 sudo make install
 ```
 
-Then add `extension=pixel_queue` to your `php.ini`.
+Then add `extension=comrec` to your `php.ini`.
 
 ### Verify
 
 ```bash
-php -r 'var_dump(extension_loaded("pixel_queue"));'
+php -r 'var_dump(extension_loaded("comrec"));'
 ```
 
 ## API

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-ext-pixel-queue is pre-1.0. No 0.x release receives security fixes or advisories; fixes land in
+ext-comrec is pre-1.0. No 0.x release receives security fixes or advisories; fixes land in
 the next release line. Security support starts with 1.0.
 
 | Version | Security fixes |
@@ -14,7 +14,7 @@ the next release line. Security support starts with 1.0.
 Please don't open a public issue for a security problem.
 
 Report it privately through GitHub: the **Report a vulnerability** button on the
-[php-io-extensions/pixel-queue](https://github.com/php-io-extensions/pixel-queue) repository's
+[php-io-extensions/comrec](https://github.com/php-io-extensions/comrec) repository's
 **Security** tab. If that isn't available, email **info@projectsaturnstudios.com**.
 
 Include what you found, the affected version, your platform and PHP build (NTS or ZTS), the
@@ -23,7 +23,7 @@ by the maintainers and answered as soon as we can.
 
 ## What the extension touches
 
-ext-pixel-queue is plain C on the Zend API. It opens no file, socket or device, links no system
+ext-comrec is plain C on the Zend API. It opens no file, socket or device, links no system
 library, and reads and writes no memory but its own and the PHP values it is given. It draws
 nothing: it records commands as PHP lists and answers rects.
 

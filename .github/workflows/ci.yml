@@ -30,15 +30,15 @@ jobs:
       - name: Build
         run: |
           phpize
-          ./configure --enable-pixel-queue
+          ./configure --enable-comrec
           make -j"$(nproc 2>/dev/null || sysctl -n hw.ncpu)"
 
       - name: Load
         run: |
-          php -n -d extension="$PWD/modules/pixel_queue.so" -r 'exit(extension_loaded("pixel_queue") ? 0 : 1);'
-          php -n -d extension="$PWD/modules/pixel_queue.so" --ri pixel_queue
+          php -n -d extension="$PWD/modules/comrec.so" -r 'exit(extension_loaded("comrec") ? 0 : 1);'
+          php -n -d extension="$PWD/modules/comrec.so" --ri comrec
 
       - name: Test
         run: |
           composer install --no-interaction --no-progress
-          php -d extension="$PWD/modules/pixel_queue.so" -d memory_limit=128M vendor/bin/pest --ci
+          php -d extension="$PWD/modules/comrec.so" -d memory_limit=128M vendor/bin/pest --ci

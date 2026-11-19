@@ -1,7 +1,7 @@
 /* This is a generated file, edit the .stub.php file instead.
  * Stub hash: fe4d6a80c564e5d5b479f55901c2c509d96133d2 */
 
-static void register_pixel_queue_symbols(int module_number)
+static void register_comrec_symbols(int module_number)
 {
 	REGISTER_DOUBLE_CONSTANT("PIXEL_QUEUE_LIMIT", PQ_LIMIT, CONST_PERSISTENT);
 	REGISTER_DOUBLE_CONSTANT("PIXEL_QUEUE_FLATNESS", PQ_FLATNESS, CONST_PERSISTENT);

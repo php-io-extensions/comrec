@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 5af8b2a7f2936c465eb819ca2be886406b303462 */
+ * Stub hash: 8c83cffafb49c83201b3053d8bd427961459790f */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_PixelQueue___construct, 0, 0, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, nonZero, IS_MIXED, 0, "0")
@@ -59,6 +59,12 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_append, 0, 2, I
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, reads, IS_ARRAY, 1, "null")
 ZEND_END_ARG_INFO()
 
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_lower, 0, 2, IS_ARRAY, 1)
+	ZEND_ARG_TYPE_INFO(0, command, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO(0, form, IS_STRING, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, packing, IS_ARRAY, 1, "null")
+ZEND_END_ARG_INFO()
+
 #define arginfo_class_PixelQueue_enter arginfo_class_PixelQueue_clip
 
 #define arginfo_class_PixelQueue_leave arginfo_class_PixelQueue_finish
@@ -72,7 +78,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_fillRect, 0, 5,
 	ZEND_ARG_TYPE_INFO(0, y, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, width, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, height, IS_DOUBLE, 0)
-	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_strokeRect, 0, 6, IS_VOID, 0)
@@ -80,7 +86,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_strokeRect, 0, 
 	ZEND_ARG_TYPE_INFO(0, y, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, width, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, height, IS_DOUBLE, 0)
-	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
 	ZEND_ARG_TYPE_INFO(0, stroke, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
@@ -89,7 +95,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_line, 0, 6, IS_
 	ZEND_ARG_TYPE_INFO(0, y0, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, x1, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, y1, IS_DOUBLE, 0)
-	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
 	ZEND_ARG_TYPE_INFO(0, stroke, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
@@ -100,7 +106,19 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_fillTriangle, 0
 	ZEND_ARG_TYPE_INFO(0, y1, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, x2, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, y2, IS_DOUBLE, 0)
-	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_fillPath, 0, 3, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, ops, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_INFO(0, evenOdd, _IS_BOOL, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_strokePath, 0, 3, IS_VOID, 0)
+	ZEND_ARG_TYPE_INFO(0, ops, IS_ARRAY, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
+	ZEND_ARG_TYPE_INFO(0, stroke, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_fillEllipse, 0, 5, IS_VOID, 0)
@@ -108,7 +126,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_fillEllipse, 0,
 	ZEND_ARG_TYPE_INFO(0, cy, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, rx, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, ry, IS_DOUBLE, 0)
-	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_strokeEllipse, 0, 6, IS_VOID, 0)
@@ -116,7 +134,7 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_strokeEllipse, 
 	ZEND_ARG_TYPE_INFO(0, cy, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, rx, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, ry, IS_DOUBLE, 0)
-	ZEND_ARG_TYPE_INFO(0, rgba, IS_LONG, 0)
+	ZEND_ARG_TYPE_MASK(0, rgba, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
 	ZEND_ARG_TYPE_INFO(0, stroke, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
@@ -126,8 +144,8 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_PixelQueue_roundRect, 0, 8
 	ZEND_ARG_TYPE_INFO(0, width, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, height, IS_DOUBLE, 0)
 	ZEND_ARG_TYPE_INFO(0, radii, IS_ARRAY, 0)
-	ZEND_ARG_TYPE_INFO(0, fill, IS_LONG, 0)
-	ZEND_ARG_TYPE_INFO(0, border, IS_LONG, 1)
+	ZEND_ARG_TYPE_MASK(0, fill, MAY_BE_LONG|MAY_BE_ARRAY, NULL)
+	ZEND_ARG_TYPE_MASK(0, border, MAY_BE_LONG|MAY_BE_ARRAY|MAY_BE_NULL, NULL)
 	ZEND_ARG_TYPE_INFO(0, borderWidth, IS_DOUBLE, 0)
 ZEND_END_ARG_INFO()
 
@@ -176,6 +194,7 @@ ZEND_METHOD(PixelQueue, matrix);
 ZEND_METHOD(PixelQueue, clip);
 ZEND_METHOD(PixelQueue, clipValue);
 ZEND_METHOD(PixelQueue, append);
+ZEND_METHOD(PixelQueue, lower);
 ZEND_METHOD(PixelQueue, enter);
 ZEND_METHOD(PixelQueue, leave);
 ZEND_METHOD(PixelQueue, clear);
@@ -183,6 +202,8 @@ ZEND_METHOD(PixelQueue, fillRect);
 ZEND_METHOD(PixelQueue, strokeRect);
 ZEND_METHOD(PixelQueue, line);
 ZEND_METHOD(PixelQueue, fillTriangle);
+ZEND_METHOD(PixelQueue, fillPath);
+ZEND_METHOD(PixelQueue, strokePath);
 ZEND_METHOD(PixelQueue, fillEllipse);
 ZEND_METHOD(PixelQueue, strokeEllipse);
 ZEND_METHOD(PixelQueue, roundRect);
@@ -205,6 +226,7 @@ static const zend_function_entry class_PixelQueue_methods[] = {
 	ZEND_ME(PixelQueue, clip, arginfo_class_PixelQueue_clip, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, clipValue, arginfo_class_PixelQueue_clipValue, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, append, arginfo_class_PixelQueue_append, ZEND_ACC_PUBLIC)
+	ZEND_ME(PixelQueue, lower, arginfo_class_PixelQueue_lower, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, enter, arginfo_class_PixelQueue_enter, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, leave, arginfo_class_PixelQueue_leave, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, clear, arginfo_class_PixelQueue_clear, ZEND_ACC_PUBLIC)
@@ -212,6 +234,8 @@ static const zend_function_entry class_PixelQueue_methods[] = {
 	ZEND_ME(PixelQueue, strokeRect, arginfo_class_PixelQueue_strokeRect, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, line, arginfo_class_PixelQueue_line, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, fillTriangle, arginfo_class_PixelQueue_fillTriangle, ZEND_ACC_PUBLIC)
+	ZEND_ME(PixelQueue, fillPath, arginfo_class_PixelQueue_fillPath, ZEND_ACC_PUBLIC)
+	ZEND_ME(PixelQueue, strokePath, arginfo_class_PixelQueue_strokePath, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, fillEllipse, arginfo_class_PixelQueue_fillEllipse, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, strokeEllipse, arginfo_class_PixelQueue_strokeEllipse, ZEND_ACC_PUBLIC)
 	ZEND_ME(PixelQueue, roundRect, arginfo_class_PixelQueue_roundRect, ZEND_ACC_PUBLIC)

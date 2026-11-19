@@ -2,7 +2,7 @@
 okf_version: "0.2"
 ---
 
-# ext-pixel-queue
+# ext-comrec
 
 * [Queue](api/queue.md) - Constants, PixelQueue: every method, the commands, the arithmetic of each shape, how a box is found and how two frames are compared, and what is refused.
 
